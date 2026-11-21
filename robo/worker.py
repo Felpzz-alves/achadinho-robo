@@ -87,7 +87,12 @@ def process_job(job):
         set_product(pid, preview_path=f"{base}/previa.mp4", pipeline="Prévia sem voz")
 
         set_product(pid, pipeline="Dublagem")
-        voz = voice.get_voice(product, work)
+        try:
+            voz = voice.get_voice(product, work)
+        except RuntimeError as e:
+            # a prévia já está pronta; só a voz falhou (ex.: falta a chave da ElevenLabs)
+            set_product(pid, pipeline="Prévia sem voz", error_message=f"Prévia pronta. {e}")
+            return
         if not voz:
             # sem narração ainda: o cliente vê a prévia e pode baixar ou gravar a voz depois
             set_product(pid, pipeline="Prévia sem voz",
