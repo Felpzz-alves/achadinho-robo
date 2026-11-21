@@ -78,7 +78,12 @@ def process_job(job):
         ext = product["raw_path"].rsplit(".", 1)[-1].lower()
         raw = supa.download(product["raw_path"], f"{work}/bruto.{ext}")
         hook = f"{work}/gancho.png"
-        editor.make_hook(hook, product.get("roteiro"), product.get("nome"), template)
+        try:
+            text, emojis = supa.headline(pid, editor.extract_frames(raw, work))
+        except Exception:  # noqa: BLE001 - sem IA, usa o nome do produto
+            log.exception("gancho por IA indisponível; usando o nome do produto")
+            text, emojis = editor.fallback_headline(product.get("nome"), product.get("categoria"))
+        editor.make_hook(hook, text, emojis, template)
         handle = (profile.get("loja") or "").strip()
 
         preview = f"{work}/previa.mp4"

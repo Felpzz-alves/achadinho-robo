@@ -62,3 +62,13 @@ def upload(path, src, content_type="video/mp4"):
         r = requests.put(url, data=f, headers={"Content-Type": content_type, "x-upsert": "true"}, timeout=600)
     r.raise_for_status()
     return path
+
+
+def headline(product_id, frame_paths):
+    import base64
+    frames = []
+    for fp in frame_paths:
+        with open(fp, "rb") as f:
+            frames.append(base64.b64encode(f.read()).decode())
+    got = _call("headline", product_id=product_id, frames=frames)
+    return got["text"], got.get("emojis", "")

@@ -34,20 +34,49 @@ def duration(path):
     return float(json.loads(out)["format"]["duration"])
 
 
-def headline_from(roteiro, nome):
-    """Primeira frase do roteiro vira a headline; sem roteiro, usa o nome do produto."""
-    text = (roteiro or "").strip()
-    text = re.sub(r"\[[^\]]*\]", "", text).strip()  # tira tags do eleven_v4
-    first = re.split(r"(?<=[.!?])\s", text, maxsplit=1)[0] if text else ""
-    first = first.strip(" .!?")
-    if not first:
-        first = f"Olha esse achadinho: {nome}" if nome else "Olha esse achadinho da Shopee"
-    emojis = "".join(EMOJI_RE.findall(first)) or "🏠✨"
-    first = EMOJI_RE.sub("", first).strip()
-    words = first.split()
-    if len(words) > 10:
-        first = " ".join(words[:10])
-    return first, emojis[:4]
+def clean_text(text):
+    """Tira markdown, aspas, rótulos tipo **Desejo** e tags [excited] de um texto."""
+    t = text or ""
+    t = re.sub(r"^\s*\*\*[^*\n]{1,40}\*\*\s*", "", t)  # rótulo em linha própria
+    t = re.sub(r"\[[^\]]*\]", "", t)
+    t = re.sub(r"[*_#`\"“”«»]", "", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+FASHION = re.compile(r"vestid|blus|camis|saia|cal[çc]a|short|look|conjunto|alfaiat|cropped|top|body|moda|roupa|sutiã|lingerie|colete|jaqueta|casaco", re.I)
+BAGS = re.compile(r"bolsa|mochila|carteira", re.I)
+SHOES = re.compile(r"t[eê]nis|sand[aá]lia|sapat|bota|chinelo", re.I)
+
+
+def emojis_for(*hints):
+    h = " ".join(x for x in hints if x)
+    if BAGS.search(h):
+        return "👜✨"
+    if SHOES.search(h):
+        return "👟✨"
+    if FASHION.search(h):
+        return "👗✨"
+    return "🛍️✨"
+
+
+def fallback_headline(nome, categoria=""):
+    nome = clean_text(nome) or "achadinho"
+    text = f"Achei o achadinho mais lindo da Shopee" if not nome else f"Olha esse achadinho: {nome}"
+    words = text.split()
+    return " ".join(words[:9]), emojis_for(nome, categoria)
+
+
+def extract_frames(raw, workdir, count=4):
+    """Tira alguns quadros espalhados do vídeo (JPEG pequenos) para a IA olhar o produto."""
+    total = duration(raw)
+    paths = []
+    for i in range(count):
+        t = total * (i + 1) / (count + 1)
+        out = f"{workdir}/frame{i}.jpg"
+        run(["ffmpeg", "-y", "-ss", f"{t:.2f}", "-i", raw, "-frames:v", "1",
+             "-vf", "scale=512:-2", "-q:v", "5", out])
+        paths.append(out)
+    return paths
 
 
 def _watermark_filter(handle):
@@ -101,7 +130,8 @@ def build_final(raw, voice, out, hook_png, handle):
     ])
 
 
-def make_hook(path, roteiro, nome, template):
-    text, emojis = headline_from(roteiro, nome)
-    hooks.render(path, text, emojis, template)
+def make_hook(path, text, emojis, template):
+    text = clean_text(text)
+    emojis = "".join(EMOJI_RE.findall(emojis or "")) or "✨"
+    hooks.render(path, text, emojis[:4], template)
     return text + " " + emojis

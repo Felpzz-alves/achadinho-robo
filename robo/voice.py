@@ -46,7 +46,12 @@ def get_voice(product, workdir):
         ext = product["audio_path"].rsplit(".", 1)[-1]
         return supa.download(product["audio_path"], f"{workdir}/voz.{ext}")
     if mode == "elevenlabs":
-        text = (product.get("roteiro") or "").strip()
+        from .editor import clean_text
+        raw_text = product.get("roteiro") or ""
+        # mantém as tags de direção do eleven_v4 ([excited]...), tira markdown e aspas
+        text = re.sub(r"^\s*\*\*[^*\n]{1,40}\*\*\s*", "", raw_text)
+        text = re.sub(r"[*_#`\"“”«»]", "", text)
+        text = re.sub(r"\s+", " ", text).strip()
         if not text:
             raise RuntimeError("Escreva ou gere o roteiro antes de criar a voz com ElevenLabs.")
         path = elevenlabs(product["user_id"], text, f"{workdir}/voz.mp3", product.get("voice_id"))
