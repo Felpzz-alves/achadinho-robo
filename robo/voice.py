@@ -1,11 +1,8 @@
 """Narração: voz do cliente (áudio enviado), biblioteca ou ElevenLabs com a chave do próprio cliente."""
-import base64
-import hashlib
 import os
 import re
 
 import requests
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from . import supa
 
@@ -13,18 +10,10 @@ DEFAULT_VOICE = "ORgG8rwdAiMYRug8RJwR"  # Ana Alice - Friendly and Clear
 MODEL = os.environ.get("ELEVENLABS_MODEL", "eleven_v4")
 
 
-def decrypt_user_key(ciphertext):
-    """Mesmo formato do app: base64(iv[12] + AES-GCM), chave = SHA-256 do segredo."""
-    secret = os.environ["USER_CREDENTIAL_ENCRYPTION_SECRET"].encode()
-    raw = base64.b64decode(ciphertext)
-    return AESGCM(hashlib.sha256(secret).digest()).decrypt(raw[:12], raw[12:], None).decode()
-
-
 def elevenlabs(user_id, text, dest, voice_id=None):
-    cred = supa.one("user_credentials", {"user_id": f"eq.{user_id}", "select": "ciphertext"})
-    if not cred:
+    key = supa.elevenlabs_key(user_id)
+    if not key:
         raise RuntimeError("Conecte sua conta ElevenLabs em Conectar contas para gerar a voz.")
-    key = decrypt_user_key(cred["ciphertext"])
     r = requests.post(
         f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id or DEFAULT_VOICE}",
         headers={"xi-api-key": key, "Accept": "audio/mpeg"},

@@ -16,11 +16,13 @@ Serviço que roda 24h no Railway e faz o trabalho pesado do app:
 
 | Nome | De onde vem |
 | --- | --- |
-| `SUPABASE_URL` | Lovable → Cloud → configurações do projeto |
-| `SUPABASE_SERVICE_ROLE_KEY` | Lovable → Cloud → chaves (service role). Nunca compartilhe. |
-| `USER_CREDENTIAL_ENCRYPTION_SECRET` | o mesmo valor salvo nos Secrets do Lovable |
+| `APP_URL` | endereço publicado do app (ex.: https://seuapp.lovable.app) |
+| `WORKER_SECRET` | a mesma senha longa salva nos Secrets do Lovable |
 | `ZERNIO_API_KEY` | painel do Zernio → API Keys |
 | `POLL_SECONDS` | opcional, padrão 20 |
+
+O robô não acessa o banco direto: ele conversa com o app pela rota `/api/public/worker`,
+que só aceita quem tem o `WORKER_SECRET`.
 
 O Railway detecta o `Dockerfile` sozinho. Não precisa de porta nem domínio: é um worker.
 

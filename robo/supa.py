@@ -1,17 +1,31 @@
-"""Acesso ao banco e aos arquivos do app (Lovable Cloud / Supabase) com a chave de serviço."""
+"""Acesso ao banco e aos arquivos do app pela API do robô (/api/public/worker), protegida por WORKER_SECRET."""
 import os
 import requests
 
-URL = os.environ["SUPABASE_URL"].rstrip("/")
-KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-BUCKET = "affiliate-media"
-H = {"apikey": KEY, "Authorization": f"Bearer {KEY}"}
+APP = os.environ["APP_URL"].rstrip("/")
+SECRET = os.environ["WORKER_SECRET"]
+
+
+def _call(op, **body):
+    r = requests.post(f"{APP}/api/public/worker", json={"op": op, **body}, timeout=60,
+                      headers={"Authorization": f"Bearer {SECRET}"})
+    if r.status_code == 404 and op == "elevenlabs_key":
+        return None
+    if not r.ok:
+        raise requests.HTTPError(f"API do app recusou {op} ({r.status_code}): {r.text[:300]}", response=r)
+    return r.json()
 
 
 def select(table, params):
-    r = requests.get(f"{URL}/rest/v1/{table}", headers=H, params=params, timeout=30)
-    r.raise_for_status()
-    return r.json()
+    params = dict(params)
+    body = {"table": table, "filters": {}}
+    for k in ("order", "limit"):
+        if k in params:
+            body[k] = params.pop(k)
+    if "select" in params:
+        body["columns"] = params.pop("select")
+    body["filters"] = params
+    return _call("select", **body)
 
 
 def one(table, params):
@@ -20,25 +34,21 @@ def one(table, params):
 
 
 def update(table, filters, values):
-    r = requests.patch(
-        f"{URL}/rest/v1/{table}", headers={**H, "Prefer": "return=representation"},
-        params=filters, json=values, timeout=30,
-    )
-    r.raise_for_status()
-    return r.json()
+    return _call("update", table=table, filters=filters, values=values)
 
 
 def insert(table, values):
-    r = requests.post(
-        f"{URL}/rest/v1/{table}", headers={**H, "Prefer": "return=representation"},
-        json=values, timeout=30,
-    )
-    r.raise_for_status()
-    return r.json()
+    return _call("insert", table=table, values=values)
+
+
+def elevenlabs_key(user_id):
+    got = _call("elevenlabs_key", user_id=user_id)
+    return got["key"] if got else None
 
 
 def download(path, dest):
-    with requests.get(f"{URL}/storage/v1/object/{BUCKET}/{path}", headers=H, stream=True, timeout=300) as r:
+    url = _call("download_url", path=path)["url"]
+    with requests.get(url, stream=True, timeout=600) as r:
         r.raise_for_status()
         with open(dest, "wb") as f:
             for chunk in r.iter_content(1 << 20):
@@ -47,20 +57,8 @@ def download(path, dest):
 
 
 def upload(path, src, content_type="video/mp4"):
+    url = _call("upload_url", path=path)["url"]
     with open(src, "rb") as f:
-        r = requests.post(
-            f"{URL}/storage/v1/object/{BUCKET}/{path}",
-            headers={**H, "Content-Type": content_type, "x-upsert": "true"},
-            data=f, timeout=600,
-        )
+        r = requests.put(url, data=f, headers={"Content-Type": content_type, "x-upsert": "true"}, timeout=600)
     r.raise_for_status()
     return path
-
-
-def signed_url(path, seconds=3600):
-    r = requests.post(
-        f"{URL}/storage/v1/object/sign/{BUCKET}/{path}", headers=H,
-        json={"expiresIn": seconds}, timeout=30,
-    )
-    r.raise_for_status()
-    return URL + "/storage/v1" + r.json()["signedURL"]
