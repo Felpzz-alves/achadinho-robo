@@ -97,10 +97,12 @@ def process_job(job):
         if (product.get("voice_mode") == "elevenlabs" and not (product.get("roteiro") or "").strip()
                 and frames):
             # sem roteiro escrito: o robô cria a narração olhando o vídeo, começando pelo gancho
-            try:
-                product["roteiro"] = supa.narration(pid, frames, text)
-            except Exception:  # noqa: BLE001 - segue e mostra a mensagem de roteiro vazio
-                log.exception("narração automática indisponível")
+            for gancho in (text, None):
+                try:
+                    product["roteiro"] = supa.narration(pid, frames, gancho)
+                    break
+                except Exception:  # noqa: BLE001 - tenta sem gancho, depois mostra a mensagem de roteiro vazio
+                    log.exception("narração automática indisponível")
         try:
             voz = voice.get_voice(product, work)
         except RuntimeError as e:
