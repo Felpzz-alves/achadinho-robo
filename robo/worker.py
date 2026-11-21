@@ -78,8 +78,10 @@ def process_job(job):
         ext = product["raw_path"].rsplit(".", 1)[-1].lower()
         raw = supa.download(product["raw_path"], f"{work}/bruto.{ext}")
         hook = f"{work}/gancho.png"
+        frames = []
         try:
-            text, emojis = supa.headline(pid, editor.extract_frames(raw, work))
+            frames = editor.extract_frames(raw, work)
+            text, emojis = supa.headline(pid, frames)
         except Exception:  # noqa: BLE001 - sem IA, usa o nome do produto
             log.exception("gancho por IA indisponível; usando o nome do produto")
             text, emojis = editor.fallback_headline(product.get("nome"), product.get("categoria"))
@@ -92,6 +94,13 @@ def process_job(job):
         set_product(pid, preview_path=f"{base}/previa.mp4", pipeline="Prévia sem voz")
 
         set_product(pid, pipeline="Dublagem")
+        if (product.get("voice_mode") == "elevenlabs" and not (product.get("roteiro") or "").strip()
+                and frames):
+            # sem roteiro escrito: o robô cria a narração olhando o vídeo, começando pelo gancho
+            try:
+                product["roteiro"] = supa.narration(pid, frames, text)
+            except Exception:  # noqa: BLE001 - segue e mostra a mensagem de roteiro vazio
+                log.exception("narração automática indisponível")
         try:
             voz = voice.get_voice(product, work)
         except RuntimeError as e:
