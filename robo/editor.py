@@ -16,8 +16,16 @@ EMOJI_RE = re.compile(
 
 def run(cmd):
     p = subprocess.run(cmd, capture_output=True, text=True)
+    if p.returncode < 0 or p.returncode in (137, 139):
+        raise RuntimeError(
+            "O servidor do robô ficou sem memória ao editar este vídeo (processo encerrado). "
+            "Tente de novo; se repetir, aumente a memória do serviço no Railway."
+        )
     if p.returncode != 0:
-        raise RuntimeError(f"ffmpeg falhou: {p.stderr[-800:]}")
+        lines = [l for l in p.stderr.splitlines() if l.strip()]
+        useful = [l for l in lines if any(k in l.lower() for k in ("error", "invalid", "no such", "failed", "unable", "cannot", "not found", "could not"))]
+        detail = " | ".join((useful or lines)[-4:])
+        raise RuntimeError(f"ffmpeg falhou (código {p.returncode}): {detail[:600]}")
     return p.stdout
 
 
@@ -71,9 +79,10 @@ def build_preview(raw, out, hook_png, handle, target_seconds=None):
         f"[base][1:v]overlay=0:{HOOK_TOP}[v]"
     )
     run([
-        "ffmpeg", "-y", "-stream_loop", str(loops), "-i", raw, "-i", hook_png,
-        "-filter_complex", vf, "-map", "[v]", "-an", "-t", f"{length:.2f}",
+        "ffmpeg", "-y", "-threads", "2", "-stream_loop", str(loops), "-i", raw, "-i", hook_png,
+        "-filter_complex", vf, "-filter_complex_threads", "1", "-map", "[v]", "-an", "-t", f"{length:.2f}",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+        "-threads", "2", "-x264-params", "rc-lookahead=10:ref=2:sync-lookahead=0",
         "-map_metadata", "-1", "-movflags", "+faststart", out,
     ])
 
