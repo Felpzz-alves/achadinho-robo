@@ -165,12 +165,20 @@ def next_slot_after(stamp, horas):
     return f"{nd} {hs[0]}"
 
 
+def _hashtags(product):
+    tags = product.get("hashtags_list") or product.get("hashtags") or []
+    if isinstance(tags, str):
+        tags = tags.split()
+    return " ".join(t if t.startswith("#") else "#" + t for t in (x.strip() for x in tags) if t)
+
+
 def caption_for(product, cfg):
     if (product.get("legenda") or "").strip():
         return product["legenda"]
     tpl = (cfg.get("legenda_template") or "").strip() or DEFAULT_CAPTION
-    kw = (product.get("palavra") or "").strip().upper() or "PALAVRA-CHAVE"
-    return tpl.replace("{PALAVRA-CHAVE}", kw).replace("{HASHTAGS}", (product.get("hashtags") or "").strip()).strip()
+    kw = ((product.get("palavra") or "").strip() or (product.get("subcategoria") or "").strip()
+          or (product.get("nome") or "").strip() or "PALAVRA-CHAVE").upper()
+    return tpl.replace("{PALAVRA-CHAVE}", kw).replace("{HASHTAGS}", _hashtags(product)).strip()
 
 
 def latest_destination(pid):
@@ -178,13 +186,59 @@ def latest_destination(pid):
     return (job or {}).get("destination") or "post"
 
 
+def _post(p, account, cfg, slot):
+    """Sobe o vídeo final no Zernio e agenda o Reel. Devolve True se deu certo."""
+    work = tempfile.mkdtemp(prefix="post-")
+    try:
+        video = supa.download(p["final_path"], f"{work}/final.mp4")
+        url = zernio.upload_video(video)
+        post_id = zernio.schedule_reel(account, url, caption_for(p, cfg), slot)
+        set_product(p["id"], zernio_post_id=post_id, scheduled_for=slot,
+                    pipeline="Agendado", error_message="")
+        log.info("agendado %s para %s", p["id"], slot)
+        return True
+    except Exception as e:  # noqa: BLE001
+        log.exception("falha ao agendar")
+        set_product(p["id"], error_message=f"Não consegui agendar a postagem: {str(e)[:300]}")
+        return False
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def _account(uid):
+    profile = supa.one("profiles", {"id": f"eq.{uid}"}) or {}
+    return (profile.get("zernio_account_id") or "").strip()
+
+
+def soon_stamp(minutes=3):
+    return (datetime.now(TZ) + timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M")
+
+
 def schedule_once():
     if not os.environ.get("ZERNIO_API_KEY"):
         return
+    # 1) o cliente escolheu "Postar agora" ou um horário na aba Postagem
+    for modo in ("agora", "agendado"):
+        try:
+            pedidos = supa.select("produtos", {"modo_postagem": f"eq.{modo}", "final_path": "neq.",
+                                               "zernio_post_id": "eq."})
+        except Exception:  # noqa: BLE001 - coluna ainda não existe no app
+            pedidos = []
+        for p in pedidos:
+            account = _account(p["user_id"])
+            if not account:
+                set_product(p["id"], error_message="Conecte seu Instagram em Conectar contas para postar.")
+                continue
+            cfg = supa.one("configuracoes", {"user_id": f"eq.{p['user_id']}"}) or {}
+            when = (p.get("postar_em") or "").replace("T", " ")[:16]
+            slot = when if modo == "agendado" and when > now_stamp() else soon_stamp()
+            if not _post(p, account, cfg, slot):
+                # não fica tentando sem parar: o cliente vê o erro e pede de novo na aba Postagem
+                set_product(p["id"], modo_postagem="", pipeline="Erro")
+    # 2) postagem automática: aprovados entram nos próximos horários do cliente
     for cfg in supa.select("configuracoes", {"automatic_posting": "is.true"}):
         uid = cfg["user_id"]
-        profile = supa.one("profiles", {"id": f"eq.{uid}"}) or {}
-        account = (profile.get("zernio_account_id") or "").strip()
+        account = _account(uid)
         if not account:
             continue
         queue = supa.select("produtos", {
@@ -197,24 +251,12 @@ def schedule_once():
                                          "select": "scheduled_for", "order": "scheduled_for.desc", "limit": 1})
         last = max(now_stamp(), taken[0]["scheduled_for"] if taken else "")
         for p in queue:
-            if latest_destination(p["id"]) == "download":
+            if latest_destination(p["id"]) == "download" or (p.get("modo_postagem") or "") in ("agora", "agendado", "manual"):
                 continue
             base = max(last, p.get("aprovado_em") or "")
             slot = next_slot_after(base, cfg.get("horarios"))
-            work = tempfile.mkdtemp(prefix="post-")
-            try:
-                video = supa.download(p["final_path"], f"{work}/final.mp4")
-                url = zernio.upload_video(video)
-                post_id = zernio.schedule_reel(account, url, caption_for(p, cfg), slot)
-                set_product(p["id"], zernio_post_id=post_id, scheduled_for=slot,
-                            pipeline="Agendado", error_message="")
-                log.info("agendado %s para %s", p["id"], slot)
+            if _post(p, account, cfg, slot):
                 last = slot
-            except Exception as e:  # noqa: BLE001
-                log.exception("falha ao agendar")
-                set_product(p["id"], error_message=f"Não consegui agendar a postagem: {str(e)[:300]}")
-            finally:
-                shutil.rmtree(work, ignore_errors=True)
 
 
 def sync_published():
