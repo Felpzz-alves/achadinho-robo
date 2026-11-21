@@ -2,8 +2,8 @@
 import os
 import requests
 
-APP = os.environ["APP_URL"].rstrip("/")
-SECRET = os.environ["WORKER_SECRET"]
+APP = os.environ["APP_URL"].strip().rstrip("/")
+SECRET = os.environ["WORKER_SECRET"].strip()
 
 
 def _call(op, **body):

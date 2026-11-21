@@ -16,7 +16,17 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-from . import editor, supa, voice, zernio
+REQUIRED = ["APP_URL", "WORKER_SECRET"]
+_missing = [v for v in REQUIRED if not os.environ.get(v, "").strip()]
+if _missing:
+    print("FALTAM VARIÁVEIS NO RAILWAY: " + ", ".join(_missing)
+          + ". Crie em Variables e clique em Deploy para aplicar.", flush=True)
+    time.sleep(300)
+    raise SystemExit(1)
+if not os.environ.get("ZERNIO_API_KEY"):
+    print("Aviso: ZERNIO_API_KEY não configurada; a postagem automática fica desligada.", flush=True)
+
+from . import editor, supa, voice, zernio  # noqa: E402
 
 log = logging.getLogger("robo")
 TZ = ZoneInfo("America/Sao_Paulo")
