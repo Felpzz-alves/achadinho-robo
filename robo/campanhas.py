@@ -158,6 +158,8 @@ def ligar_sub_ids():
                           or (x.get("nome") or "").lower().removeprefix("ca | ").strip() == m["nome"].strip().lower()),
                          None)
             if c is None:
+                if not subid.e_shopee(m["link"]):
+                    continue  # campanha que não leva para a Shopee (ex.: ClickBank): não entra no app
                 try:
                     supa.insert("campanhas", {
                         "user_id": uid, "nome": m["nome"], "platform_campaign_id": pid, "link_url": m["link"],

@@ -38,3 +38,8 @@ def de_link(url):
     content = (qs.get("utm_content") or [""])[0]
     partes = [p for p in re.split(r"-+", content) if p.strip()]
     return "-".join(partes)
+
+
+def e_shopee(url):
+    host = (urlparse((url or "").strip()).hostname or "").lower()
+    return host in _CURTOS or host.endswith("shopee.com.br") or host.endswith("shopee.com")
