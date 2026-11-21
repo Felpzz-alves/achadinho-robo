@@ -125,7 +125,7 @@ def process_job(job):
         if product.get("legenda_video"):
             words = product.get("_words") or subtitles.words_even(product.get("roteiro"), editor.duration(voz))
             if words:
-                subs = subtitles.write_ass(words, f"{work}/legenda.ass")
+                subs = subtitles.write_ass(words, f"{work}/legenda.ass", product.get("legenda_opcoes") or cfg.get("legenda_opcoes"))
         editor.build_final(raw, voz, final, hook, handle, subs=subs)
         supa.upload(f"{base}/final.mp4", final)
         values = {"final_path": f"{base}/final.mp4", "pipeline": "Prévia final", "error_message": ""}

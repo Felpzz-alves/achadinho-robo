@@ -57,26 +57,63 @@ def _esc(text):
     return text.replace("\\", "").replace("{", "(").replace("}", ")")
 
 
-def write_ass(words, path, max_words=3):
-    """Blocos de até 3 palavras, brancos com contorno preto, na faixa de baixo (fora do gancho)."""
+COLORS = {  # ASS usa &HBBGGRR
+    "branco": "&H00FFFFFF", "amarelo": "&H0000E5FF", "verde": "&H0057E36B",
+    "rosa": "&H00B469FF", "azul": "&H00FFB43C",
+}
+FONTS = {"moderna": "DejaVu Sans", "classica": "Liberation Sans", "elegante": "Liberation Serif"}
+MARGIN_V = {"baixo": 560, "meio": 860, "alto": 1320}
+
+
+def write_ass(words, path, opcoes=None, max_words=3):
+    """Blocos de até 3 palavras no estilo escolhido pelo cliente (fora da caixa do gancho)."""
+    o = opcoes or {}
+    estilo = o.get("estilo") or "contorno"
+    cor = COLORS.get(o.get("cor") or "branco", COLORS["branco"])
+    font = FONTS.get(o.get("fonte") or "moderna", FONTS["moderna"])
+    margin = MARGIN_V.get(o.get("posicao") or "baixo", MARGIN_V["baixo"])
+    upper = o.get("maiusculas", True) is not False
+    white = COLORS["branco"]
+    if estilo == "caixa":
+        # BorderStyle 3 = caixa opaca atrás do texto
+        style = f"{font},74,{cor},{cor},&H00000000,&H50000000,-1,0,0,0,100,100,0,0,3,18,0"
+    elif estilo == "simples":
+        style = f"{font},62,{cor},{cor},&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,0,3"
+    elif estilo == "destaque":
+        style = f"{font},80,{white},{white},&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,6,2"
+    else:
+        style = f"{font},78,{cor},{cor},&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,6,2"
     lines = [
         "[Script Info]", "ScriptType: v4.00+", "PlayResX: 1080", "PlayResY: 1920", "WrapStyle: 0", "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
         "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding",
-        "Style: Legenda,DejaVu Sans,78,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,"
-        "-1,0,0,0,100,100,0,0,1,6,2,2,80,80,560,1",
+        f"Style: Legenda,{style},2,80,80,{margin},1",
         "", "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
     chunk = []
 
+    def fmt(word):
+        return _esc(word.upper() if upper else word)
+
     def flush():
         if not chunk:
             return
-        text = " ".join(w for w, _, _ in chunk).upper()
-        lines.append(f"Dialogue: 0,{_ts(chunk[0][1])},{_ts(chunk[-1][2] + 0.05)},Legenda,,0,0,0,,{_esc(text)}")
+        end = chunk[-1][2] + 0.05
+        if estilo == "destaque":
+            # uma linha por palavra falada, com a palavra atual na cor escolhida
+            for i, (_, s, e) in enumerate(chunk):
+                e2 = chunk[i + 1][1] if i + 1 < len(chunk) else end
+                text = " ".join(
+                    ("{\\c" + cor + "&}" + fmt(w) + "{\\c" + white + "&}") if j == i else fmt(w)
+                    for j, (w, _, _) in enumerate(chunk)
+                )
+                lines.append(f"Dialogue: 0,{_ts(s)},{_ts(e2)},Legenda,,0,0,0,,{text}")
+        else:
+            text = " ".join(fmt(w) for w, _, _ in chunk)
+            lines.append(f"Dialogue: 0,{_ts(chunk[0][1])},{_ts(end)},Legenda,,0,0,0,,{text}")
         chunk.clear()
 
     for w in words:
