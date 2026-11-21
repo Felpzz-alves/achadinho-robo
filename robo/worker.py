@@ -26,7 +26,7 @@ if _missing:
 if not os.environ.get("ZERNIO_API_KEY"):
     print("Aviso: ZERNIO_API_KEY não configurada; a postagem automática fica desligada.", flush=True)
 
-from . import editor, supa, voice, zernio  # noqa: E402
+from . import editor, subtitles, supa, voice, zernio  # noqa: E402
 
 log = logging.getLogger("robo")
 TZ = ZoneInfo("America/Sao_Paulo")
@@ -81,6 +81,12 @@ def process_job(job):
         frames = []
         try:
             frames = editor.extract_frames(raw, work)
+            try:
+                # identifica o produto pelo vídeo (nome, categoria, subcategoria, hashtags) sem
+                # sobrescrever o que o cliente já preencheu
+                product.update({k: v for k, v in (supa.identify(pid, frames) or {}).items() if v})
+            except Exception:  # noqa: BLE001
+                log.exception("identificação automática indisponível")
             text, emojis = supa.headline(pid, frames)
         except Exception:  # noqa: BLE001 - sem IA, usa o nome do produto
             log.exception("gancho por IA indisponível; usando o nome do produto")
@@ -115,7 +121,12 @@ def process_job(job):
                         error_message="Prévia pronta. Grave ou envie a narração e mande para edição de novo para o vídeo final.")
             return
         final = f"{work}/final.mp4"
-        editor.build_final(raw, voz, final, hook, handle)
+        subs = None
+        if product.get("legenda_video"):
+            words = product.get("_words") or subtitles.words_even(product.get("roteiro"), editor.duration(voz))
+            if words:
+                subs = subtitles.write_ass(words, f"{work}/legenda.ass")
+        editor.build_final(raw, voz, final, hook, handle, subs=subs)
         supa.upload(f"{base}/final.mp4", final)
         values = {"final_path": f"{base}/final.mp4", "pipeline": "Prévia final", "error_message": ""}
         if product.get("audio_path"):

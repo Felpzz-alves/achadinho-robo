@@ -97,7 +97,7 @@ def _watermark_filter(handle):
     )
 
 
-def build_preview(raw, out, hook_png, handle, target_seconds=None):
+def build_preview(raw, out, hook_png, handle, target_seconds=None, subs=None):
     """Vídeo 9:16 sem áudio, com gancho e marca d'água. Se target_seconds, faz loop até a duração."""
     src = duration(raw)
     length = target_seconds or src
@@ -105,7 +105,7 @@ def build_preview(raw, out, hook_png, handle, target_seconds=None):
     vf = (
         f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},fps={FPS},"
         f"eq=contrast=1.05:saturation=1.08,setsar=1{_watermark_filter(handle)}[base];"
-        f"[base][1:v]overlay=0:{HOOK_TOP}[v]"
+        f"[base][1:v]overlay=0:{HOOK_TOP}" + (f",ass={subs}" if subs else "") + "[v]"
     )
     run([
         "ffmpeg", "-y", "-threads", "2", "-stream_loop", str(loops), "-i", raw, "-i", hook_png,
@@ -116,11 +116,11 @@ def build_preview(raw, out, hook_png, handle, target_seconds=None):
     ])
 
 
-def build_final(raw, voice, out, hook_png, handle):
+def build_final(raw, voice, out, hook_png, handle, subs=None):
     """Duração = narração + 0,4 s; o bruto repete se for mais curto. Áudio em -14 LUFS."""
     target = duration(voice) + 0.4
     silent = out + ".silent.mp4"
-    build_preview(raw, silent, hook_png, handle, target_seconds=target)
+    build_preview(raw, silent, hook_png, handle, target_seconds=target, subs=subs)
     run([
         "ffmpeg", "-y", "-i", silent, "-i", voice,
         "-filter_complex", "[1:a]loudnorm=I=-14:TP=-1.5:LRA=11,apad[a]",

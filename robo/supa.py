@@ -84,3 +84,8 @@ def narration(product_id, frame_paths, hook=None):
     if hook:
         body["hook"] = hook
     return _call("narration", **body)["text"]
+
+
+def identify(product_id, frame_paths):
+    """O app reconhece o produto pelos frames e preenche só os campos vazios. Devolve o que salvou."""
+    return _call("identify", product_id=product_id, frames=_frames(frame_paths))

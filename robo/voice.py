@@ -2,39 +2,65 @@
 import os
 import re
 
+import base64
+
 import requests
 
-from . import supa
+from . import supa, subtitles
 
 DEFAULT_VOICE = "ORgG8rwdAiMYRug8RJwR"  # Ana Alice - Friendly and Clear
 MODEL = os.environ.get("ELEVENLABS_MODEL", "eleven_v4")
 
 
+def _tts(key, voice_id, text, model):
+    return requests.post(
+        f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id or DEFAULT_VOICE}/with-timestamps",
+        headers={"xi-api-key": key, "Content-Type": "application/json"},
+        json={"text": text, "model_id": model},
+        timeout=180,
+    )
+
+
 def elevenlabs(user_id, text, dest, voice_id=None):
+    """Gera a voz e devolve (caminho, palavras com tempo) para a legenda."""
     key = supa.elevenlabs_key(user_id)
     if not key:
         raise RuntimeError("Conecte sua conta ElevenLabs em Conectar contas para gerar a voz.")
-    r = requests.post(
-        f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id or DEFAULT_VOICE}",
-        headers={"xi-api-key": key, "Accept": "audio/mpeg"},
-        json={"text": text, "model_id": MODEL},
-        timeout=180,
-    )
+    r = _tts(key, voice_id, text, MODEL)
     if r.status_code == 401:
         raise RuntimeError("A chave da ElevenLabs foi recusada. Salve a chave de novo em Conectar contas.")
     if r.status_code == 400 and MODEL != "eleven_multilingual_v2":
         # modelo indisponível na conta do cliente: tenta o multilíngue, sem tags de direção
-        r = requests.post(
-            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id or DEFAULT_VOICE}",
-            headers={"xi-api-key": key, "Accept": "audio/mpeg"},
-            json={"text": re.sub(r"\[[^\]]*\]", "", text), "model_id": "eleven_multilingual_v2"},
-            timeout=180,
-        )
+        r = _tts(key, voice_id, re.sub(r"\[[^\]]*\]", "", text), "eleven_multilingual_v2")
     if not r.ok:
         raise RuntimeError(f"ElevenLabs recusou a geração ({r.status_code}). Confira seus créditos.")
+    data = r.json()
     with open(dest, "wb") as f:
-        f.write(r.content)
-    return dest
+        f.write(base64.b64decode(data["audio_base64"]))
+    words = subtitles.words_from_alignment(data.get("alignment") or data.get("normalized_alignment") or {})
+    return dest, words
+
+
+def transcribe(user_id, audio_path):
+    """Tempos das palavras de uma voz gravada, pela ElevenLabs do cliente. Sem chave: None."""
+    try:
+        key = supa.elevenlabs_key(user_id)
+    except Exception:  # noqa: BLE001
+        key = None
+    if not key:
+        return None
+    with open(audio_path, "rb") as f:
+        r = requests.post(
+            "https://api.elevenlabs.io/v1/speech-to-text",
+            headers={"xi-api-key": key},
+            data={"model_id": "scribe_v1", "language_code": "por"},
+            files={"file": f},
+            timeout=300,
+        )
+    if not r.ok:
+        return None
+    return [(w["text"].strip(), w["start"], w["end"]) for w in r.json().get("words", [])
+            if w.get("type", "word") == "word" and w.get("text", "").strip()]
 
 
 def get_voice(product, workdir):
@@ -44,7 +70,10 @@ def get_voice(product, workdir):
         if not product.get("audio_path"):
             return None
         ext = product["audio_path"].rsplit(".", 1)[-1]
-        return supa.download(product["audio_path"], f"{workdir}/voz.{ext}")
+        path = supa.download(product["audio_path"], f"{workdir}/voz.{ext}")
+        if product.get("legenda_video"):
+            product["_words"] = transcribe(product["user_id"], path)
+        return path
     if mode == "elevenlabs":
         from .editor import clean_text
         raw_text = product.get("roteiro") or ""
@@ -54,7 +83,7 @@ def get_voice(product, workdir):
         text = re.sub(r"\s+", " ", text).strip()
         if not text:
             raise RuntimeError("Escreva ou gere o roteiro antes de criar a voz com ElevenLabs.")
-        path = elevenlabs(product["user_id"], text, f"{workdir}/voz.mp3", product.get("voice_id"))
+        path, product["_words"] = elevenlabs(product["user_id"], text, f"{workdir}/voz.mp3", product.get("voice_id"))
         stored = f"{product['user_id']}/edits/{product['id']}/voz.mp3"
         supa.upload(stored, path, "audio/mpeg")
         product["audio_path"] = stored
