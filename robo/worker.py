@@ -26,7 +26,7 @@ if _missing:
 if not os.environ.get("ZERNIO_API_KEY"):
     print("Aviso: ZERNIO_API_KEY não configurada; a postagem automática fica desligada.", flush=True)
 
-from . import editor, subtitles, supa, voice, zernio  # noqa: E402
+from . import campanhas, editor, subtitles, supa, voice, zernio  # noqa: E402
 
 log = logging.getLogger("robo")
 TZ = ZoneInfo("America/Sao_Paulo")
@@ -302,6 +302,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     log.info("robô iniciado")
     last_post_check = 0.0
+    last_ads_check = 0.0
     while True:
         try:
             busy = edit_once()
@@ -309,6 +310,12 @@ def main():
                 schedule_once()
                 sync_published()
                 last_post_check = time.time()
+            if os.environ.get("ZERNIO_API_KEY") and time.time() - last_ads_check > 600:
+                last_ads_check = time.time()
+                try:
+                    campanhas.ciclo()
+                except Exception:  # noqa: BLE001 - campanhas nunca travam a edição
+                    log.exception("falha no ciclo de campanhas")
         except requests.RequestException:
             log.exception("erro de rede; tento de novo")
             busy = False

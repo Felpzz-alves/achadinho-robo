@@ -89,3 +89,12 @@ def narration(product_id, frame_paths, hook=None):
 def identify(product_id, frame_paths):
     """O app reconhece o produto pelos frames e preenche só os campos vazios. Devolve o que salvou."""
     return _call("identify", product_id=product_id, frames=_frames(frame_paths))
+
+
+def upsert(table, values, on_conflict):
+    return _call("upsert", table=table, values=values, on_conflict=on_conflict)
+
+
+def shopee_conversions(user_id, date):
+    """Comissões do dia (YYYY-MM-DD) pela API de afiliados da Shopee do cliente: [{sub_id, comissao, pedidos}]."""
+    return _call("shopee_conversions", user_id=user_id, date=date).get("rows", [])
