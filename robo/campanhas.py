@@ -13,7 +13,7 @@ import tempfile
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from . import supa, zernio
+from . import subid, supa, zernio
 
 log = logging.getLogger("robo.campanhas")
 TZ = ZoneInfo("America/Sao_Paulo")
@@ -114,6 +114,72 @@ def _salvar_metrica(c, dia, **vals):
                 "campanha_id,data")
 
 
+def ligar_sub_ids():
+    """Liga cada campanha do Meta ao Sub ID lendo o link de destino dos anúncios, mesmo com nomes
+    diferentes. Sub ID corrigido à mão (sub_id_origem='manual') nunca é trocado."""
+    camps = supa.select("campanhas", {"status": "neq.erro", "limit": 1000})
+    por_user = {}
+    for c in camps:
+        por_user.setdefault(c["user_id"], []).append(c)
+    for p in supa.select("profiles", {"zernio_ads_account_id": "neq.", "meta_ad_account_id": "neq."}):
+        uid = p.get("id") or p.get("user_id")
+        por_user.setdefault(uid, [])
+    for uid, lista in por_user.items():
+        conta, ad_account = _contas(uid)
+        if not conta or not ad_account:
+            continue
+        try:
+            ads = zernio.list_ads_summary(conta, ad_account)
+        except Exception:  # noqa: BLE001
+            log.exception("lista de anúncios indisponível")
+            continue
+        meta = {}
+        for ad in ads:
+            pid = str(ad.get("platformCampaignId") or "").strip()
+            if not pid:
+                continue
+            m = meta.setdefault(pid, {"nome": ad.get("campaignName") or ad.get("name") or "", "link": "",
+                                      "ativa": False, "adset": ad.get("platformAdSetId") or ""})
+            link = ((ad.get("creative") or {}).get("linkUrl") or "").strip()
+            if link and not m["link"]:
+                m["link"] = link
+            st = str(ad.get("platformCampaignStatus") or ad.get("status") or "").lower()
+            if st in ("active", "ativo"):
+                m["ativa"] = True
+        por_pid = {c["platform_campaign_id"]: c for c in lista if c.get("platform_campaign_id")}
+        livres = [c for c in lista if not c.get("platform_campaign_id")]
+        for pid, m in meta.items():
+            sub = subid.de_link(m["link"])
+            c = por_pid.get(pid)
+            if not c and sub:
+                c = next((x for x in livres if (x.get("sub_id") or "").strip().lower() == sub.lower()), None)
+            if not c and m["nome"]:
+                c = next((x for x in livres if (x.get("nome") or "").strip().lower() == m["nome"].strip().lower()
+                          or (x.get("nome") or "").lower().removeprefix("ca | ").strip() == m["nome"].strip().lower()),
+                         None)
+            if c is None:
+                try:
+                    supa.insert("campanhas", {
+                        "user_id": uid, "nome": m["nome"], "platform_campaign_id": pid, "link_url": m["link"],
+                        "sub_id": sub, "sub_id_origem": "auto" if sub else "",
+                        "status": "ativa" if m["ativa"] else "pausada",
+                        "ativada_em": _today().isoformat() if m["ativa"] else ""})
+                except Exception:  # noqa: BLE001
+                    log.exception("não consegui criar a campanha %s", pid)
+                continue
+            if c in livres:
+                livres.remove(c)
+            mud = {}
+            if not c.get("platform_campaign_id"):
+                mud["platform_campaign_id"] = pid
+            if m["link"] and not c.get("link_url"):
+                mud["link_url"] = m["link"]
+            if c.get("sub_id_origem") != "manual" and sub and sub != c.get("sub_id"):
+                mud["sub_id"], mud["sub_id_origem"] = sub, "auto"
+            if mud:
+                _set(c["id"], **mud)
+
+
 def puxar_gasto():
     """Gasto, cliques e impressões dos últimos 4 dias de cada campanha, por dia."""
     ativas = supa.select("campanhas", {"platform_campaign_id": "neq.", "status": "neq.encerrada"})
@@ -207,6 +273,7 @@ def avaliar():
 def ciclo():
     criar_pedidas()
     aplicar_acoes()
+    ligar_sub_ids()
     puxar_gasto()
     puxar_comissoes()
     avaliar()

@@ -113,3 +113,27 @@ def ads_tree(account_id, ad_account_id, from_date, to_date):
             raise RuntimeError(f"Zernio recusou métricas ({r.status_code}): {r.text[:300]}")
         return r.json()
     return {}
+
+
+def list_ads_summary(account_id, ad_account_id):
+    """Todos os anúncios da conta (view=summary): cada um traz platformCampaignId, campaignName,
+    status e creative.linkUrl (link de destino)."""
+    params = {"accountId": account_id, "adAccountId": ad_account_id, "view": "summary", "limit": 100}
+    ads, page = [], 1
+    for _ in range(20):
+        r = requests.get(f"{BASE}/ads", headers=_h(), params={**params, "page": page}, timeout=120)
+        if r.status_code == 202:
+            import time
+            time.sleep(10)
+            continue
+        if not r.ok:
+            raise RuntimeError(f"Zernio recusou a lista de anúncios ({r.status_code}): {r.text[:300]}")
+        data = r.json() if r.content else {}
+        items = data.get("ads") or data.get("data") or (data if isinstance(data, list) else [])
+        ads.extend(items)
+        pag = data.get("pagination") or {} if isinstance(data, dict) else {}
+        if not items or not (pag.get("hasMore") or pag.get("hasNextPage") or
+                             (pag.get("totalPages") and page < pag["totalPages"])):
+            break
+        page += 1
+    return ads
