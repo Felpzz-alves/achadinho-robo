@@ -84,7 +84,9 @@ def get_voice(product, workdir):
         if not text:
             raise RuntimeError("Escreva ou gere o roteiro antes de criar a voz com ElevenLabs.")
         path, product["_words"] = elevenlabs(product["user_id"], text, f"{workdir}/voz.mp3", product.get("voice_id"))
-        stored = f"{product['user_id']}/edits/{product['id']}/voz.mp3"
+        import time
+        # nome único: cada narração gerada fica guardada na biblioteca de áudios do cliente
+        stored = f"{product['user_id']}/edits/{product['id']}/voz-{int(time.time())}.mp3"
         supa.upload(stored, path, "audio/mpeg")
         product["audio_path"] = stored
         return path
