@@ -235,28 +235,44 @@ def schedule_once():
             if not _post(p, account, cfg, slot):
                 # não fica tentando sem parar: o cliente vê o erro e pede de novo na aba Postagem
                 set_product(p["id"], modo_postagem="", pipeline="Erro")
-    # 2) postagem automática: aprovados entram nos próximos horários do cliente
+    # 2) fila: vídeos escolhidos em "Selecione os vídeos para postagem" (modo "fila") e, para quem
+    #    ligou a postagem automática, todos os aprovados; um vídeo por horário, na ordem
+    filas = {}
+    try:
+        for p in supa.select("produtos", {"modo_postagem": "eq.fila", "final_path": "neq.",
+                                          "zernio_post_id": "eq.", "order": "ordem.asc"}):
+            filas.setdefault(p["user_id"], []).append(p)
+    except Exception:  # noqa: BLE001 - coluna ainda não existe no app
+        pass
     for cfg in supa.select("configuracoes", {"automatic_posting": "is.true"}):
-        uid = cfg["user_id"]
-        account = _account(uid)
-        if not account:
-            continue
-        queue = supa.select("produtos", {
-            "user_id": f"eq.{uid}", "etapa": "eq.Aprovado", "final_path": "neq.",
+        queue = filas.setdefault(cfg["user_id"], [])
+        ids = {p["id"] for p in queue}
+        for p in supa.select("produtos", {
+            "user_id": f"eq.{cfg['user_id']}", "etapa": "eq.Aprovado", "final_path": "neq.",
             "zernio_post_id": "eq.", "order": "ordem.asc",
-        })
+        }):
+            if p["id"] not in ids and (p.get("modo_postagem") or "") == "" \
+                    and latest_destination(p["id"]) != "download":
+                queue.append(p)
+    for uid, queue in filas.items():
         if not queue:
             continue
+        account = _account(uid)
+        if not account:
+            for p in queue:
+                if p.get("modo_postagem") == "fila":
+                    set_product(p["id"], error_message="Conecte seu Instagram em Conectar contas para postar.")
+            continue
+        cfg = supa.one("configuracoes", {"user_id": f"eq.{uid}"}) or {}
         taken = supa.select("produtos", {"user_id": f"eq.{uid}", "scheduled_for": "neq.",
                                          "select": "scheduled_for", "order": "scheduled_for.desc", "limit": 1})
         last = max(now_stamp(), taken[0]["scheduled_for"] if taken else "")
         for p in queue:
-            if latest_destination(p["id"]) == "download" or (p.get("modo_postagem") or "") in ("agora", "agendado", "manual"):
-                continue
-            base = max(last, p.get("aprovado_em") or "")
-            slot = next_slot_after(base, cfg.get("horarios"))
+            slot = next_slot_after(max(last, p.get("aprovado_em") or ""), cfg.get("horarios"))
             if _post(p, account, cfg, slot):
                 last = slot
+            elif p.get("modo_postagem") == "fila":
+                set_product(p["id"], modo_postagem="", pipeline="Erro")
 
 
 def sync_published():
