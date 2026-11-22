@@ -88,9 +88,31 @@ def variar(emojis, seed, *hints):
     return principal + rnd.choice(resto)
 
 
-def fallback_headline(nome, categoria=""):
-    nome = clean_text(nome) or "achadinho"
-    text = f"Achei o achadinho mais lindo da Shopee" if not nome else f"Olha esse achadinho: {nome}"
+ARQUIVO = re.compile(r"\.(mp4|mov|m4v|webm|avi|mkv)$|savein|snaptik|ssstik|^(img|vid|video|achadinho)[\s_-]*\d|^[\w-]{18,}$", re.I)
+GANCHOS = [
+    "Achei o achadinho mais lindo da Shopee",
+    "Olha o que eu achei na Shopee",
+    "Esse achadinho da Shopee me surpreendeu",
+    "Gente, olha esse achadinho da Shopee",
+    "Achadinho da Shopee que vale cada centavo",
+]
+
+
+def nome_de_arquivo(nome):
+    """True quando o 'nome' é só o nome do arquivo enviado (achadinho46.mp4, SaveInta.com_...)."""
+    n = (nome or "").strip()
+    return not n or bool(ARQUIVO.search(n)) or ("_" in n and " " not in n)
+
+
+def fallback_headline(nome, categoria="", seed=None):
+    """Gancho sem IA. Nunca usa o nome do arquivo: só o nome do produto, se o cliente escreveu."""
+    import random
+    arquivo = nome_de_arquivo(nome)
+    nome = clean_text(nome)
+    if nome and not arquivo and len(nome.split()) <= 5:
+        text = f"Olha esse achadinho: {nome}"
+    else:
+        text = random.Random(str(seed)).choice(GANCHOS)
     words = text.split()
     return " ".join(words[:9]), emojis_for(nome, categoria)
 
