@@ -44,21 +44,30 @@ def clean_text(text):
 
 
 FASHION = re.compile(r"vestid|blus|camis|saia|cal[çc]a|short|look|conjunto|alfaiat|cropped|top|body|moda|roupa|sutiã|lingerie|colete|jaqueta|casaco", re.I)
+COZINHA = re.compile(r"cozinha|panela|frigideira|pote|tábua|faca|talher|garrafa|copo|air ?fryer|escorredor|tempero", re.I)
+LIMPEZA = re.compile(r"limp|lavanderia|roupa suja|vassoura|rodo|esponja|pano|banheiro|ralo|cesto", re.I)
 BAGS = re.compile(r"bolsa|mochila|carteira", re.I)
 SHOES = re.compile(r"t[eê]nis|sand[aá]lia|sapat|bota|chinelo", re.I)
 
 
 POOLS = {
+    "cozinha": ["🍳", "🥘", "🏠", "😍", "🥹"],
+    "limpeza": ["🧼", "🧺", "🫧", "🏠", "😍"],
     "bags": ["👜", "👛", "💼", "🎒", "💖", "😍"],
     "shoes": ["👟", "👠", "👡", "🥿", "👢", "😍"],
     "fashion": ["👗", "👚", "💃", "🥰", "😍", "💖", "🛍️"],
-    "geral": ["🛍️", "🛒", "😍", "🤩", "🥰", "💖", "🏠"],
+    "geral": ["🏠", "😍", "🥹", "🛍️", "🤩", "💖"],
 }
-ACCENTS = ["✨", "🔥", "💖", "😍", "🤩", "💅", "🥰", "⭐", "💥", "🙌", "❤️", "🛒"]
+# segundo emoji: a skill usa ✨ como base; alterna com outros do mesmo clima
+ACCENTS = ["✨", "✨", "😍", "🥹", "💖", "🤩"]
 
 
 def _pool(*hints):
     h = " ".join(x for x in hints if x)
+    if COZINHA.search(h):
+        return "cozinha"
+    if LIMPEZA.search(h):
+        return "limpeza"
     if BAGS.search(h):
         return "bags"
     if SHOES.search(h):
@@ -89,12 +98,13 @@ def variar(emojis, seed, *hints):
 
 
 ARQUIVO = re.compile(r"\.(mp4|mov|m4v|webm|avi|mkv)$|savein|snaptik|ssstik|^(img|vid|video|achadinho)[\s_-]*\d|^[\w-]{18,}$", re.I)
+# fórmulas da skill edicao-achadinho
 GANCHOS = [
-    "Achei o achadinho mais lindo da Shopee",
-    "Olha o que eu achei na Shopee",
-    "Esse achadinho da Shopee me surpreendeu",
-    "Gente, olha esse achadinho da Shopee",
-    "Achadinho da Shopee que vale cada centavo",
+    "Achei o achadinho mais útil da Shopee",
+    "Esse achadinho mudou minha casa",
+    "Ninguém tá falando desse achadinho da Shopee",
+    "Item de casa que vale cada centavo",
+    "Como eu vivi sem isso na minha casa?",
 ]
 
 
@@ -109,8 +119,8 @@ def fallback_headline(nome, categoria="", seed=None):
     import random
     arquivo = nome_de_arquivo(nome)
     nome = clean_text(nome)
-    if nome and not arquivo and len(nome.split()) <= 5:
-        text = f"Olha esse achadinho: {nome}"
+    if nome and not arquivo and len(nome.split()) <= 4:
+        text = f"Achei {nome[:1].lower() + nome[1:]} na Shopee"
     else:
         text = random.Random(str(seed)).choice(GANCHOS)
     words = text.split()

@@ -9,7 +9,7 @@ import requests
 from . import supa, subtitles
 
 DEFAULT_VOICE = "ORgG8rwdAiMYRug8RJwR"  # Ana Alice - Friendly and Clear
-MODEL = os.environ.get("ELEVENLABS_MODEL", "eleven_v3")
+MODEL = os.environ.get("ELEVENLABS_MODEL", "eleven_v4")  # padrão da skill edicao-achadinho
 # modelos que entendem tags de direção como [excited]
 _TAG_MODELS = ("eleven_v3", "eleven_v4")
 
@@ -30,10 +30,10 @@ def animar(text):
     for i, f in enumerate(frases):
         if i == 0:
             out.append(f"[excited] {f}")
-        elif f.endswith("!") and i % 2 == 0:
-            out.append(f"[excited] {f}")
+        elif i == 2 and f.endswith("!"):
+            out.append(f"[impressed] {f}")
         elif i == len(frases) - 1:
-            out.append(f"[cheerfully] {f}")
+            out.append(f"[playful] {f}")
         else:
             out.append(f)
     return " ".join(out)
@@ -60,7 +60,7 @@ def elevenlabs(user_id, text, dest, voice_id=None):
     r = _tts(key, voice_id, text, MODEL)
     if r.status_code == 401:
         raise RuntimeError("A chave da ElevenLabs foi recusada. Salve a chave de novo em Conectar contas.")
-    for alt in ("eleven_v3", "eleven_multilingual_v2"):
+    for alt in ("eleven_v4", "eleven_v3", "eleven_multilingual_v2"):
         if r.status_code not in (400, 422) or alt == MODEL:
             continue
         # modelo indisponível na conta do cliente: tenta o próximo
