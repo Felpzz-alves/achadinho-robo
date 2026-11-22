@@ -48,15 +48,44 @@ BAGS = re.compile(r"bolsa|mochila|carteira", re.I)
 SHOES = re.compile(r"t[eê]nis|sand[aá]lia|sapat|bota|chinelo", re.I)
 
 
-def emojis_for(*hints):
+POOLS = {
+    "bags": ["👜", "👛", "💼", "🎒", "💖", "😍"],
+    "shoes": ["👟", "👠", "👡", "🥿", "👢", "😍"],
+    "fashion": ["👗", "👚", "💃", "🥰", "😍", "💖", "🛍️"],
+    "geral": ["🛍️", "🛒", "😍", "🤩", "🥰", "💖", "🏠"],
+}
+ACCENTS = ["✨", "🔥", "💖", "😍", "🤩", "💅", "🥰", "⭐", "💥", "🙌", "❤️", "🛒"]
+
+
+def _pool(*hints):
     h = " ".join(x for x in hints if x)
     if BAGS.search(h):
-        return "👜✨"
+        return "bags"
     if SHOES.search(h):
-        return "👟✨"
+        return "shoes"
     if FASHION.search(h):
-        return "👗✨"
-    return "🛍️✨"
+        return "fashion"
+    return "geral"
+
+
+def emojis_for(*hints):
+    return POOLS[_pool(*hints)][0] + "✨"
+
+
+def variar(emojis, seed, *hints):
+    """Alterna os emojis do gancho: cada vídeo sai com uma dupla diferente.
+
+    Mantém o primeiro emoji da IA quando ele combina com o produto (ex.: 🍳), e troca o
+    acompanhamento, que antes saía sempre igual (✨)."""
+    import random
+    rnd = random.Random(str(seed))
+    found = "".join(EMOJI_RE.findall(emojis or ""))
+    first = re.match(r".\ufe0f?", found)
+    pool = POOLS[_pool(*hints)]
+    ia = first.group(0) if first and first.group(0) not in ACCENTS else None
+    principal = ia if ia and rnd.random() < 0.5 else rnd.choice(pool)
+    resto = [a for a in ACCENTS if a not in principal]
+    return principal + rnd.choice(resto)
 
 
 def fallback_headline(nome, categoria=""):
@@ -130,8 +159,10 @@ def build_final(raw, voice, out, hook_png, handle, subs=None):
     ])
 
 
-def make_hook(path, text, emojis, template):
+def make_hook(path, text, emojis, template, seed=None, *hints):
     text = clean_text(text)
+    if seed is not None:
+        emojis = variar(emojis, seed, text, *hints)
     emojis = "".join(EMOJI_RE.findall(emojis or "")) or "✨"
     hooks.render(path, text, emojis[:4], template)
     return text + " " + emojis

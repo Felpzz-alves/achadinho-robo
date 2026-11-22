@@ -91,7 +91,7 @@ def process_job(job):
         except Exception:  # noqa: BLE001 - sem IA, usa o nome do produto
             log.exception("gancho por IA indisponível; usando o nome do produto")
             text, emojis = editor.fallback_headline(product.get("nome"), product.get("categoria"))
-        editor.make_hook(hook, text, emojis, template)
+        editor.make_hook(hook, text, emojis, template, pid, product.get("nome"), product.get("categoria"))
         handle = (profile.get("loja") or "").strip()
 
         preview = f"{work}/previa.mp4"
