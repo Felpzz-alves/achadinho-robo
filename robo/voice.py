@@ -9,14 +9,45 @@ import requests
 from . import supa, subtitles
 
 DEFAULT_VOICE = "ORgG8rwdAiMYRug8RJwR"  # Ana Alice - Friendly and Clear
-MODEL = os.environ.get("ELEVENLABS_MODEL", "eleven_v4")
+MODEL = os.environ.get("ELEVENLABS_MODEL", "eleven_v3")
+# modelos que entendem tags de direção como [excited]
+_TAG_MODELS = ("eleven_v3", "eleven_v4")
+
+
+def _settings(model):
+    """Voz de blogueira empolgada: pouca estabilidade = mais emoção e variação."""
+    if model in _TAG_MODELS:
+        return {"stability": 0.0, "similarity_boost": 0.75, "use_speaker_boost": True}
+    return {"stability": 0.3, "similarity_boost": 0.75, "style": 0.65, "use_speaker_boost": True}
+
+
+def animar(text):
+    """Põe tags de empolgação quando o roteiro não traz nenhuma."""
+    if re.search(r"\[[a-z ]{2,20}\]", text):
+        return text
+    frases = re.split(r"(?<=[!?.])\s+", text.strip())
+    out = []
+    for i, f in enumerate(frases):
+        if i == 0:
+            out.append(f"[excited] {f}")
+        elif f.endswith("!") and i % 2 == 0:
+            out.append(f"[excited] {f}")
+        elif i == len(frases) - 1:
+            out.append(f"[cheerfully] {f}")
+        else:
+            out.append(f)
+    return " ".join(out)
 
 
 def _tts(key, voice_id, text, model):
+    if model in _TAG_MODELS:
+        text = animar(text)
+    else:
+        text = re.sub(r"\[[^\]]*\]\s*", "", text)
     return requests.post(
         f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id or DEFAULT_VOICE}/with-timestamps",
         headers={"xi-api-key": key, "Content-Type": "application/json"},
-        json={"text": text, "model_id": model},
+        json={"text": text, "model_id": model, "voice_settings": _settings(model)},
         timeout=180,
     )
 
@@ -29,9 +60,11 @@ def elevenlabs(user_id, text, dest, voice_id=None):
     r = _tts(key, voice_id, text, MODEL)
     if r.status_code == 401:
         raise RuntimeError("A chave da ElevenLabs foi recusada. Salve a chave de novo em Conectar contas.")
-    if r.status_code == 400 and MODEL != "eleven_multilingual_v2":
-        # modelo indisponível na conta do cliente: tenta o multilíngue, sem tags de direção
-        r = _tts(key, voice_id, re.sub(r"\[[^\]]*\]", "", text), "eleven_multilingual_v2")
+    for alt in ("eleven_v3", "eleven_multilingual_v2"):
+        if r.status_code not in (400, 422) or alt == MODEL:
+            continue
+        # modelo indisponível na conta do cliente: tenta o próximo
+        r = _tts(key, voice_id, text, alt)
     if not r.ok:
         raise RuntimeError(f"ElevenLabs recusou a geração ({r.status_code}). Confira seus créditos.")
     data = r.json()
