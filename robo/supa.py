@@ -73,22 +73,60 @@ def _frames(frame_paths):
     return frames
 
 
+_CAMPOS = "nome,nome_provisorio,categoria,subcategoria,hashtags_list,beneficios,palavra,hook_text,falar_preco,preco"
+
+
+def _produto(product_id):
+    return one("produtos", {"id": f"eq.{product_id}", "select": _CAMPOS}) or {}
+
+
 def headline(product_id, frame_paths):
-    got = _call("headline", product_id=product_id, frames=_frames(frame_paths))
-    return got["text"], got.get("emojis", "")
+    from . import ia
+    if not ia.ativo():
+        got = _call("headline", product_id=product_id, frames=_frames(frame_paths))
+        return got["text"], got.get("emojis", "")
+    p = _produto(product_id)
+    if (p.get("hook_text") or "").strip():
+        return p["hook_text"].strip(), "✨"
+    return ia.gancho(p, frame_paths)
 
 
 def narration(product_id, frame_paths, hook=None):
-    """Pede ao app uma narração no padrão de edição (o app também salva em produtos.roteiro)."""
-    body = {"product_id": product_id, "frames": _frames(frame_paths)}
-    if hook:
-        body["hook"] = hook
-    return _call("narration", **body)["text"]
+    """Narração no padrão de edição; também fica salva em produtos.roteiro."""
+    from . import ia
+    if not ia.ativo():
+        body = {"product_id": product_id, "frames": _frames(frame_paths)}
+        if hook:
+            body["hook"] = hook
+        return _call("narration", **body)["text"]
+    p = _produto(product_id)
+    if (p.get("hook_text") or "").strip():
+        hook = p["hook_text"].strip()
+    text = ia.narracao(p, frame_paths, hook)
+    update("produtos", {"id": f"eq.{product_id}"}, {"roteiro": text})
+    return text
 
 
 def identify(product_id, frame_paths):
-    """O app reconhece o produto pelos frames e preenche só os campos vazios. Devolve o que salvou."""
-    return _call("identify", product_id=product_id, frames=_frames(frame_paths))
+    """Reconhece o produto pelos frames e preenche só os campos vazios. Devolve o que salvou."""
+    from . import ia
+    if not ia.ativo():
+        return _call("identify", product_id=product_id, frames=_frames(frame_paths))
+    cur = _produto(product_id)
+    got = ia.identificar(frame_paths)
+    patch = {}
+    if not cur.get("nome") or cur.get("nome") == cur.get("nome_provisorio"):
+        patch["nome"] = got["nome"]
+    if not cur.get("categoria"):
+        patch["categoria"] = got["categoria"]
+    if not cur.get("subcategoria"):
+        patch["subcategoria"] = got["subcategoria"]
+    if not cur.get("hashtags_list") and got["hashtags"]:
+        patch["hashtags_list"] = got["hashtags"]
+        patch["hashtags"] = " ".join(got["hashtags"])
+    if patch:
+        update("produtos", {"id": f"eq.{product_id}"}, patch)
+    return patch
 
 
 def upsert(table, values, on_conflict):
