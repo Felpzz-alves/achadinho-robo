@@ -10,7 +10,7 @@ import re
 
 import anthropic
 
-MODEL = os.environ.get("AI_MODEL", "claude-opus-5-5")
+MODEL = os.environ.get("AI_MODEL", "claude-haiku-5-5")  # escolha do dono: Haiku, mais barato
 EFFORT = os.environ.get("AI_EFFORT", "low")
 
 CATEGORIAS = {
