@@ -5,7 +5,8 @@ Regras (automacao/campanhas.md):
 - O relatório da Shopee de um dia só sai no dia seguinte: lucro compara o gasto de ONTEM (D-1)
   com as comissões de D-1.
 - Teste = 3 dias fechados. 2º dia com comissão acumulada < gasto: só alerta.
-  3º dia em diante com comissão acumulada < gasto: recomenda pausar. Nunca pausa sozinho.
+  3º dia em diante com comissão acumulada < gasto: o robô pausa sozinho (pedido do Felipe, 23/11).
+  Se o cliente reativar depois, o robô não pausa de novo.
 """
 import logging
 import shutil
@@ -17,6 +18,7 @@ from . import subid, supa, zernio
 
 log = logging.getLogger("robo.campanhas")
 TZ = ZoneInfo("America/Sao_Paulo")
+AUTO = "pausada automaticamente pelo robô"
 
 
 def _today():
@@ -271,7 +273,11 @@ def avaliar():
             elif dias < 3:
                 rec = base + " Atenção: ainda em teste (3 dias). Só alerta por enquanto."
             else:
-                rec = base + " Teste de 3 dias concluído sem se pagar: recomendo pausar."
+                ja_pausou = AUTO in (c.get("recomendacao") or "")
+                if c.get("status") == "ativa" and not c.get("acao") and not ja_pausou:
+                    _set(c["id"], acao="pausar")
+                    log.info("campanha %s pausada automaticamente", c["id"])
+                rec = base + f" Teste de 3 dias concluído sem se pagar: {AUTO}."
         if rec != (c.get("recomendacao") or ""):
             _set(c["id"], recomendacao=rec, dia_teste=max(0, dias))
 
