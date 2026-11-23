@@ -34,7 +34,11 @@ def _contas(uid):
 
 # ------------------------------------------------------------------ criar
 def criar_pedidas():
-    for c in supa.select("campanhas", {"status": "eq.pedido", "order": "created_at.asc", "limit": 5}):
+    agora = datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
+    pedidas = supa.select("campanhas", {"status": "eq.pedido", "order": "created_at.asc", "limit": 200})
+    # "inicio" (AAAA-MM-DD HH:MM, horário de Brasília) agenda a subida; vazio = sobe já
+    prontas = [c for c in pedidas if (c.get("inicio") or "").replace("T", " ")[:16] <= agora]
+    for c in prontas[:5]:
         conta, ad_account = _contas(c["user_id"])
         if not conta or not ad_account:
             _set(c["id"], status="erro", error_message="Conecte o Meta Ads em Conectar contas e escolha a conta de anúncios.")
