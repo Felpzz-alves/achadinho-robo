@@ -235,6 +235,26 @@ def schedule_once():
             if not _post(p, account, cfg, slot):
                 # não fica tentando sem parar: o cliente vê o erro e pede de novo na aba Postagem
                 set_product(p["id"], modo_postagem="", pipeline="Erro")
+    # 1b) "antecipar": vídeo já agendado que o dono quer postar agora (teste da programação)
+    try:
+        antecipar = supa.select("produtos", {"modo_postagem": "eq.antecipar", "zernio_post_id": "neq."})
+    except Exception:  # noqa: BLE001
+        antecipar = []
+    for p in antecipar:
+        slot = soon_stamp()
+        try:
+            if zernio.reschedule(p["zernio_post_id"], slot):
+                set_product(p["id"], scheduled_for=slot, modo_postagem="fila", error_message="")
+                log.info("antecipado %s para %s", p["id"], slot)
+                continue
+            account = _account(p["user_id"])
+            set_product(p["id"], zernio_post_id="")
+            cfg = supa.one("configuracoes", {"user_id": f"eq.{p['user_id']}"}) or {}
+            _post(p, account, cfg, slot)
+            set_product(p["id"], modo_postagem="fila")
+        except Exception as e:  # noqa: BLE001
+            log.exception("falha ao antecipar")
+            set_product(p["id"], modo_postagem="fila", error_message=f"Não consegui antecipar: {str(e)[:300]}")
     # 2) fila: vídeos escolhidos em "Selecione os vídeos para postagem" (modo "fila") e, para quem
     #    ligou a postagem automática, todos os aprovados; um vídeo por horário, na ordem
     filas = {}

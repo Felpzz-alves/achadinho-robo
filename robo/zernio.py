@@ -40,6 +40,19 @@ def schedule_reel(account_id, video_url, caption, when_local, timezone="America/
     return r.json()["post"]["_id"]
 
 
+def reschedule(post_id, when_local, timezone="America/Sao_Paulo"):
+    """Muda o horário de um post já agendado. Se o Zernio não aceitar, apaga o post (o chamador recria)."""
+    when = when_local.replace(" ", "T") + ":00"
+    r = requests.put(f"{BASE}/posts/{post_id}", headers=_h(), timeout=60,
+                     json={"scheduledFor": when, "timezone": timezone})
+    if r.ok:
+        return True
+    d = requests.delete(f"{BASE}/posts/{post_id}", headers=_h(), timeout=60)
+    if not d.ok:
+        raise RuntimeError(f"Zernio não deixou mudar nem apagar o post ({r.status_code}/{d.status_code}): {r.text[:200]}")
+    return False
+
+
 def recent_posts(status, since_iso=None):
     params = {"status": status, "platform": "instagram", "limit": 100}
     if since_iso:
