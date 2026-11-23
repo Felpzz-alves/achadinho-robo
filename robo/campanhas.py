@@ -5,7 +5,7 @@ Regras (automacao/campanhas.md):
 - O relatório da Shopee de um dia só sai no dia seguinte: lucro compara o gasto de ONTEM (D-1)
   com as comissões de D-1.
 - Teste = 3 dias fechados. 2º dia com comissão acumulada < gasto: só alerta.
-  3º dia em diante com comissão acumulada < gasto: o robô pausa sozinho (pedido do Felipe, 23/11).
+  3º dia em diante com comissão acumulada < gasto: o robô pausa sozinho às 23:59 (pedido do Felipe, 23/11).
   Se o cliente reativar depois, o robô não pausa de novo.
 """
 import logging
@@ -19,6 +19,7 @@ from . import subid, supa, zernio
 log = logging.getLogger("robo.campanhas")
 TZ = ZoneInfo("America/Sao_Paulo")
 AUTO = "pausada automaticamente pelo robô"
+MANTIDA = "Mantida pelo dono"  # o dono decidiu manter: o robô não mexe na recomendação nem pausa
 
 
 def _today():
@@ -256,6 +257,8 @@ def avaliar():
     hoje = _today()
     ontem = (hoje - timedelta(days=1)).isoformat()
     for c in supa.select("campanhas", {"ativada_em": "neq.", "status": "neq.encerrada"}):
+        if MANTIDA in (c.get("recomendacao") or ""):
+            continue
         inicio = c["ativada_em"][:10]
         dias = (hoje - datetime.strptime(inicio, "%Y-%m-%d").date()).days  # dias fechados
         if dias < 1:
@@ -275,11 +278,33 @@ def avaliar():
             else:
                 ja_pausou = AUTO in (c.get("recomendacao") or "")
                 if c.get("status") == "ativa" and not c.get("acao") and not ja_pausou:
-                    _set(c["id"], acao="pausar")
-                    log.info("campanha %s pausada automaticamente", c["id"])
+                    _set(c["id"], acao="pausar_auto")  # só vale às 23:59 (pausar_no_fim_do_dia)
+                    log.info("campanha %s marcada para pausar às 23:59", c["id"])
                 rec = base + f" Teste de 3 dias concluído sem se pagar: {AUTO}."
         if rec != (c.get("recomendacao") or ""):
             _set(c["id"], recomendacao=rec, dia_teste=max(0, dias))
+
+
+def pausar_no_fim_do_dia():
+    """Pausas automáticas só acontecem às 23:59 (horário de Brasília), regra do Felipe."""
+    agora = datetime.now(TZ)
+    # janela 23:59–00:05: cobre o caso de o robô estar ocupado editando um vídeo às 23:59
+    if not ((agora.hour, agora.minute) >= (23, 59) or (agora.hour == 0 and agora.minute < 5)):
+        return
+    for c in supa.select("campanhas", {"acao": "eq.pausar_auto"}):
+        camp = c.get("platform_campaign_id") or ""
+        try:
+            if MANTIDA in (c.get("recomendacao") or "") or c.get("status") != "ativa":
+                _set(c["id"], acao="")
+                continue
+            if not camp:
+                raise RuntimeError("A campanha ainda não foi criada no Meta.")
+            zernio.set_campaign_status(camp, "paused")
+            _set(c["id"], acao="", status="pausada", error_message="")
+            log.info("campanha %s pausada às 23:59", c["id"])
+        except Exception as e:  # noqa: BLE001
+            log.exception("falha na pausa automática")
+            _set(c["id"], acao="", error_message=f"Não consegui pausar: {str(e)[:300]}")
 
 
 def ciclo():

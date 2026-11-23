@@ -314,6 +314,11 @@ def main():
                 schedule_once()
                 sync_published()
                 last_post_check = time.time()
+            if os.environ.get("ZERNIO_API_KEY"):
+                try:
+                    campanhas.pausar_no_fim_do_dia()  # só age entre 23:59 e 00:00
+                except Exception:  # noqa: BLE001
+                    log.exception("falha na pausa das 23:59")
             if os.environ.get("ZERNIO_API_KEY") and time.time() - last_ads_check > 600:
                 last_ads_check = time.time()
                 try:
