@@ -235,9 +235,9 @@ def schedule_once():
             if not _post(p, account, cfg, slot):
                 # não fica tentando sem parar: o cliente vê o erro e pede de novo na aba Postagem
                 set_product(p["id"], modo_postagem="", pipeline="Erro")
-    # 1b) "antecipar": vídeo já agendado que o dono quer postar agora (teste da programação)
+    # 1b) "agora" num vídeo já agendado: o dono quer que o dono quer postar agora (teste da programação)
     try:
-        antecipar = supa.select("produtos", {"modo_postagem": "eq.antecipar", "zernio_post_id": "neq."})
+        antecipar = supa.select("produtos", {"modo_postagem": "eq.agora", "zernio_post_id": "neq."})
     except Exception:  # noqa: BLE001
         antecipar = []
     for p in antecipar:
