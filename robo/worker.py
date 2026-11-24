@@ -255,6 +255,29 @@ def schedule_once():
         except Exception as e:  # noqa: BLE001
             log.exception("falha ao antecipar")
             set_product(p["id"], modo_postagem="fila", error_message=f"Não consegui antecipar: {str(e)[:300]}")
+    # 1c) "agendado" num vídeo que já tem post no Zernio: mudar o horário (reordenar a fila)
+    try:
+        mover = supa.select("produtos", {"modo_postagem": "eq.agendado", "zernio_post_id": "neq."})
+    except Exception:  # noqa: BLE001
+        mover = []
+    for p in mover:
+        slot = (p.get("postar_em") or "").replace("T", " ")[:16]
+        if not slot or slot <= now_stamp():
+            set_product(p["id"], modo_postagem="fila")
+            continue
+        try:
+            if slot == (p.get("scheduled_for") or "")[:16] or zernio.reschedule(p["zernio_post_id"], slot):
+                set_product(p["id"], scheduled_for=slot, modo_postagem="fila", error_message="")
+                log.info("reagendado %s para %s", p["id"], slot)
+                continue
+            account = _account(p["user_id"])
+            set_product(p["id"], zernio_post_id="")
+            cfg = supa.one("configuracoes", {"user_id": f"eq.{p['user_id']}"}) or {}
+            _post(p, account, cfg, slot)
+            set_product(p["id"], modo_postagem="fila")
+        except Exception as e:  # noqa: BLE001
+            log.exception("falha ao reagendar")
+            set_product(p["id"], modo_postagem="fila", error_message=f"Não consegui mudar o horário: {str(e)[:300]}")
     # 2) fila: vídeos escolhidos em "Selecione os vídeos para postagem" (modo "fila") e, para quem
     #    ligou a postagem automática, todos os aprovados; um vídeo por horário, na ordem
     filas = {}
