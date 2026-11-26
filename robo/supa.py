@@ -47,7 +47,8 @@ def elevenlabs_key(user_id):
 
 
 def download(path, dest):
-    url = _call("download_url", path=path)["url"]
+    # vídeo já hospedado (ex.: arquivo do repositório) em vez do storage do app
+    url = path if path.startswith(("https://", "http://")) else _call("download_url", path=path)["url"]
     with requests.get(url, stream=True, timeout=600) as r:
         r.raise_for_status()
         with open(dest, "wb") as f:
